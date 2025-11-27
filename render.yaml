@@ -1,0 +1,14 @@
+# Render Blueprint für ClevrRemote Signaling Server
+# Deploy via: https://render.com/deploy
+
+services:
+  - type: web
+    name: clevr-signaling
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
