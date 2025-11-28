@@ -85,8 +85,9 @@ function handleMessage(ws, message) {
 }
 
 function joinRoom(ws, roomCode) {
-    if (!roomCode || roomCode.length !== 4) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid room code' }));
+    // Akzeptiere 4-8 stellige Codes (8 für Dongle-MAC-basierte Codes)
+    if (!roomCode || roomCode.length < 4 || roomCode.length > 8) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid room code (4-8 digits required)' }));
         return;
     }
 
