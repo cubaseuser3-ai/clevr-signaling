@@ -10,20 +10,64 @@ const http = require('http');
 
 const PORT = process.env.PORT || 3001;
 
-// HTTP Server für Health Check
+// HTTP Server für Health Check und Clipboard API
 const httpServer = http.createServer((req, res) => {
+    // CORS Headers für alle Requests
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+
     if (req.url === '/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: 'ok',
             rooms: rooms.size,
             connections: wss.clients.size,
+            clipboards: clipboardStore.size,
             uptime: Math.floor(process.uptime())
         }));
-    } else {
-        res.writeHead(404);
-        res.end('Not found');
+        return;
     }
+
+    // Clipboard API: /clip/:code
+    const clipMatch = req.url.match(/^\/clip\/([A-Za-z0-9-]+)$/);
+    if (clipMatch) {
+        const code = clipMatch[1];
+
+        if (req.method === 'GET') {
+            // Clipboard abrufen
+            const entry = clipboardStore.get(code);
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(entry ? entry.text : '');
+            return;
+        }
+
+        if (req.method === 'POST') {
+            // Clipboard setzen
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                if (body && body.length < 100000) { // Max 100KB
+                    clipboardStore.set(code, { text: body, timestamp: Date.now() });
+                    res.writeHead(200, { 'Content-Type': 'text/plain' });
+                    res.end('OK');
+                } else {
+                    res.writeHead(400, { 'Content-Type': 'text/plain' });
+                    res.end('Invalid or too large');
+                }
+            });
+            return;
+        }
+    }
+
+    res.writeHead(404);
+    res.end('Not found');
 });
 
 // WebSocket Server
@@ -34,6 +78,10 @@ const rooms = new Map();
 
 // Client zu Raum Mapping
 const clientRooms = new Map();
+
+// Clipboard Store für HTTP-basiertes Sync (Mac curl)
+// Format: { text: string, timestamp: number }
+const clipboardStore = new Map();
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -177,9 +225,12 @@ function relayToRoom(sender, roomCode, message) {
     });
 }
 
-// Aufräumen: Leere Räume alle 5 Minuten entfernen
+// Aufräumen: Leere Räume und alte Clipboards alle 5 Minuten entfernen
 setInterval(() => {
-    let cleaned = 0;
+    let cleanedRooms = 0;
+    let cleanedClips = 0;
+    const now = Date.now();
+
     rooms.forEach((room, code) => {
         // Entferne disconnected clients
         room.forEach(client => {
@@ -190,11 +241,20 @@ setInterval(() => {
         // Lösche leere Räume
         if (room.size === 0) {
             rooms.delete(code);
-            cleaned++;
+            cleanedRooms++;
         }
     });
-    if (cleaned > 0) {
-        console.log(`Cleaned ${cleaned} empty rooms`);
+
+    // Lösche Clipboard-Einträge älter als 10 Minuten
+    clipboardStore.forEach((entry, code) => {
+        if (now - entry.timestamp > 600000) {
+            clipboardStore.delete(code);
+            cleanedClips++;
+        }
+    });
+
+    if (cleanedRooms > 0 || cleanedClips > 0) {
+        console.log(`Cleaned ${cleanedRooms} rooms, ${cleanedClips} clipboards`);
     }
 }, 300000);
 
