@@ -66,6 +66,70 @@ const httpServer = http.createServer((req, res) => {
         }
     }
 
+    // Mac Script: /mac/:code - Bash script für Clipboard Sync
+    const macMatch = req.url.match(/^\/mac\/([A-Za-z0-9-]+)$/);
+    if (macMatch && req.method === 'GET') {
+        const code = macMatch[1];
+        const url = 'https://clevr-signaling.onrender.com/clip/' + code;
+        // Bash script ohne $ - verwendet Backticks und fest eingebauten Code
+        const script = `#!/bin/bash
+# ClevrRemote Clipboard Sync - Code: ${code}
+echo "Clipboard Sync gestartet. Code: ${code}"
+echo "Ctrl+C zum Beenden"
+U="${url}"
+L=""
+while true; do
+  N=\`pbpaste\`
+  if test -n "\${N}" && test "\${N}" != "\${L}"; then
+    curl -sX POST "\${U}" -d "\${N}"
+    L="\${N}"
+    echo "Gesendet: \${#N} Zeichen"
+  fi
+  R=\`curl -s "\${U}"\`
+  if test -n "\${R}" && test "\${R}" != "\${L}"; then
+    echo "\${R}" | pbcopy
+    L="\${R}"
+    echo "Empfangen: \${#R} Zeichen"
+  fi
+  sleep 1
+done
+`;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(script);
+        return;
+    }
+
+    // Windows Script: /win/:code - PowerShell script für Clipboard Sync
+    const winMatch = req.url.match(/^\/win\/([A-Za-z0-9-]+)$/);
+    if (winMatch && req.method === 'GET') {
+        const code = winMatch[1];
+        const url = 'https://clevr-signaling.onrender.com/clip/' + code;
+        const script = `# ClevrRemote Clipboard Sync - Code: ${code}
+Write-Host "Clipboard Sync gestartet. Code: ${code}"
+Write-Host "Ctrl+C zum Beenden"
+$U = "${url}"
+$L = ""
+while ($true) {
+    $N = Get-Clipboard
+    if ($N -and $N -ne $L) {
+        Invoke-WebRequest -Uri $U -Method POST -Body $N | Out-Null
+        $L = $N
+        Write-Host "Gesendet: $($N.Length) Zeichen"
+    }
+    $R = (Invoke-WebRequest -Uri $U).Content
+    if ($R -and $R -ne $L) {
+        Set-Clipboard $R
+        $L = $R
+        Write-Host "Empfangen: $($R.Length) Zeichen"
+    }
+    Start-Sleep 1
+}
+`;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(script);
+        return;
+    }
+
     res.writeHead(404);
     res.end('Not found');
 });
